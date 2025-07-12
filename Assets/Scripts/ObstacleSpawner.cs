@@ -61,6 +61,12 @@ public class ObstacleSpawner : MonoBehaviour
         Vector3 spawnPosition = spawnPoint.position;
         spawnPosition.z = player.position.z + spawnDistance;
 
+        // Check if the obstacle is a brick and adjust Y position
+        if (obstacleToSpawn.name.ToLower().Contains("brick"))
+        {
+            spawnPosition.y = 2.9f;
+        }
+
         GameObject newObstacle = Instantiate(obstacleToSpawn, spawnPosition, spawnPoint.rotation);
 
         activeObstacles.Add(newObstacle);

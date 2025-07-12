@@ -5,22 +5,22 @@ using UnityEngine;
 public class ObstacleCollision : MonoBehaviour
 {
     private PauseMenu pauseMenu;
-    private ObstacleSpawner obstacleSpawner;
+    private CentralizedSpawnManager spawnManager;
     
     void Start()
     {
-        // Find the PauseMenu and ObstacleSpawner in the scene
+        // Find the PauseMenu and CentralizedSpawnManager in the scene
         pauseMenu = FindObjectOfType<PauseMenu>();
-        obstacleSpawner = FindObjectOfType<ObstacleSpawner>();
+        spawnManager = FindObjectOfType<CentralizedSpawnManager>();
         
         if (pauseMenu == null)
         {
             Debug.LogError("PauseMenu not found in scene!");
         }
         
-        if (obstacleSpawner == null)
+        if (spawnManager == null)
         {
-            Debug.LogError("ObstacleSpawner not found in scene!");
+            Debug.LogError("CentralizedSpawnManager not found in scene!");
         }
     }
     
@@ -44,10 +44,10 @@ public class ObstacleCollision : MonoBehaviour
 
     void GameOver()
     {
-        // Stop spawning new obstacles
-        if (obstacleSpawner != null)
+        // Stop spawning new obstacles and coins
+        if (spawnManager != null)
         {
-            obstacleSpawner.enabled = false;
+            spawnManager.enabled = false;
         }
         
         // Show the pause menu (acts as game over menu)
