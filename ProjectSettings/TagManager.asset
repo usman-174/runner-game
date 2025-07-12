@@ -6,6 +6,9 @@ TagManager:
   tags:
   - obstacle
   - Coin
+  - Diamond
+  - EndPoint
+  - End
   layers:
   - Default
   - TransparentFX
