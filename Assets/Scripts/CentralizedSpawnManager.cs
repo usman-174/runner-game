@@ -194,7 +194,7 @@ public class CentralizedSpawnManager : MonoBehaviour
 
         Vector3 spawnPosition = lanes[selectedLane].position;
         spawnPosition.z = player.position.z + powerUpSpawnDistance;
-        spawnPosition.y += -2f; // Slightly elevated for visibility
+        spawnPosition.y += -1.6f; // Slightly elevated for visibility
 
         GameObject newPowerUp = Instantiate(powerUpToSpawn, spawnPosition, Quaternion.identity);
         activePowerUps.Add(newPowerUp);
