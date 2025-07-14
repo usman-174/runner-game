@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -97,7 +97,6 @@ public class CentralizedSpawnManager : MonoBehaviour
             UpdateLaneOccupancy();
         }
     }
-
     void SpawnObstacle()
     {
         if (obstaclePrefabs.Length == 0 || lanes.Length == 0)
@@ -106,36 +105,60 @@ public class CentralizedSpawnManager : MonoBehaviour
             return;
         }
 
-        List<int> availableLanes = GetAvailableLanesForObstacles();
-
-        if (availableLanes.Count == 0)
-        {
-            Debug.Log("No available lanes for obstacles - skipping spawn");
-            return;
-        }
-
-        int selectedLane = availableLanes[Random.Range(0, availableLanes.Count)];
         int randomObstacleIndex = Random.Range(0, obstaclePrefabs.Length);
         GameObject obstacleToSpawn = obstaclePrefabs[randomObstacleIndex];
 
-        Vector3 spawnPosition = lanes[selectedLane].position;
-        spawnPosition.z = player.position.z + obstacleSpawnDistance;
+        // ✅ Check if this is a "global" obstacle like a fence
+        bool isWideObstacle = obstacleToSpawn.name.ToLower().Contains("fence") ||
+                              obstacleToSpawn.name.ToLower().Contains("wide");
 
-        // Special handling for brick obstacles
-        if (obstacleToSpawn.name.ToLower().Contains("brick"))
+        Vector3 spawnPosition;
+
+        if (isWideObstacle)
         {
-            spawnPosition.y = 2.9f;
+            // ✅ Spawn in the center of the road
+            spawnPosition = new Vector3(0f, 0f, player.position.z + obstacleSpawnDistance);
+
+            // Optional: Adjust Y position if your prefab's pivot is below ground or needs height
+            spawnPosition.y = 4.9f; // or 1.5f if needed based on your fence prefab
+
+            // No lane occupancy update needed — it's global
+        }
+        else
+        {
+            // ✅ Spawn on safe lane
+
+            List<int> availableLanes = GetAvailableLanesForObstacles();
+
+            if (availableLanes.Count == 0)
+            {
+                Debug.Log("No available lanes for obstacles - skipping spawn");
+                return;
+            }
+
+            int selectedLane = availableLanes[Random.Range(0, availableLanes.Count)];
+
+            spawnPosition = lanes[selectedLane].position;
+            spawnPosition.z = player.position.z + obstacleSpawnDistance;
+
+            // Special case for obstacles like bricks with unusual pivot height
+            if (obstacleToSpawn.name.ToLower().Contains("brick"))
+            {
+                spawnPosition.y = 2.9f;
+            }
+
+            // Track this obstacle for lane safety
+            laneObstaclePositions[selectedLane].Add(spawnPosition.z);
+            laneObstacleCount[selectedLane]++;
         }
 
-        GameObject newObstacle = Instantiate(obstacleToSpawn, spawnPosition, lanes[selectedLane].rotation);
+        // Instantiate the obstacle
+        GameObject newObstacle = Instantiate(obstacleToSpawn, spawnPosition, Quaternion.identity);
         activeObstacles.Add(newObstacle);
 
-        // Track this obstacle
-        laneObstaclePositions[selectedLane].Add(spawnPosition.z);
-        laneObstacleCount[selectedLane]++;
-
-        Debug.Log($"Spawned {obstacleToSpawn.name} in lane {selectedLane}");
+        Debug.Log($"Spawned {obstacleToSpawn.name} at {spawnPosition}");
     }
+
 
     void SpawnCoins()
     {

@@ -9,6 +9,10 @@ TagManager:
   - Diamond
   - EndPoint
   - End
+  - power-up
+  - Fence
+  - leftboundary
+  - rightboundary
   layers:
   - Default
   - TransparentFX

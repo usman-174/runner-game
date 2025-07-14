@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.SceneManagement;
+using System.Security.Cryptography;
 
 public class GameHUD : MonoBehaviour
 {
@@ -11,6 +12,8 @@ public class GameHUD : MonoBehaviour
     public TextMeshProUGUI levelText;     // Level number display
     public TextMeshProUGUI scoreText;     // Score display (optional)
     public TextMeshProUGUI distanceText;  // Distance traveled (optional)
+
+    public static GameHUD Instance; // singleton
 
     [Header("Game Info")]
     public int currentLevel = 1;          // Current level number
@@ -23,6 +26,18 @@ public class GameHUD : MonoBehaviour
     private Vector3 startPosition;        // Player's starting position
     private bool isHUDVisible = true;     // Track HUD visibility
 
+    void Awake()
+    {
+        // Singleton pattern: only keep one GameHUD
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+    }
     void Start()
     {
         // Store the player's starting position
@@ -43,6 +58,33 @@ public class GameHUD : MonoBehaviour
         {
             HideHUD();
         }
+    }
+    void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        player = GameObject.FindWithTag("Player")?.transform;
+
+        if (player != null)
+            startPosition = player.position;
+
+        // Auto-update level number based on scene name
+        if (scene.name == "Level1")
+            SetLevel(1);
+        else if (scene.name == "Level2")
+            SetLevel(2);
+        else if (scene.name == "Level3")
+            SetLevel(3);
+
+        UpdateHUD();
     }
 
     void Update()
