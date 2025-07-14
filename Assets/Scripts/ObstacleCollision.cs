@@ -29,7 +29,15 @@ public class ObstacleCollision : MonoBehaviour
         // Check if the colliding object has the "Player" tag
         if (other.CompareTag("Player"))
         {
-            GameOver();
+            // Check if stealth mode is active before triggering game over
+            if (!IsPlayerInStealthMode())
+            {
+                GameOver();
+            }
+            else
+            {
+                Debug.Log("Player passed through obstacle while in stealth mode!");
+            }
         }
     }
 
@@ -38,8 +46,28 @@ public class ObstacleCollision : MonoBehaviour
         // Check if the colliding object has the "Player" tag
         if (collision.gameObject.CompareTag("Player"))
         {
-            GameOver();
+            // Check if stealth mode is active before triggering game over
+            if (!IsPlayerInStealthMode())
+            {
+                GameOver();
+            }
+            else
+            {
+                Debug.Log("Player passed through obstacle while in stealth mode!");
+            }
         }
+    }
+
+    bool IsPlayerInStealthMode()
+    {
+        // Check if PowerUpManager exists and stealth mode is active
+        PowerUpManager powerUpManager = PowerUpManager.Instance;
+        if (powerUpManager != null)
+        {
+            return powerUpManager.IsStealthModeActive;
+        }
+        
+        return false; // If no PowerUpManager found, stealth is not active
     }
 
     void GameOver()

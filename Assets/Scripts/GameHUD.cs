@@ -3,43 +3,68 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.SceneManagement;
-using System.Security.Cryptography;
 
 public class GameHUD : MonoBehaviour
 {
     [Header("HUD Elements")]
-    public GameObject hudPanel;           // Main HUD container
-    public TextMeshProUGUI levelText;     // Level number display
-    public TextMeshProUGUI scoreText;     // Score display (optional)
-    public TextMeshProUGUI distanceText;  // Distance traveled (optional)
+    public GameObject hudPanel;           
+    public TextMeshProUGUI levelText;     
+    public TextMeshProUGUI scoreText;     
+    public TextMeshProUGUI distanceText;  
 
     public static GameHUD Instance; // singleton
 
     [Header("Game Info")]
-    public int currentLevel = 1;          // Current level number
-    public int score = 0;                 // Player score
-    public float distance = 0f;           // Distance traveled
+    public int currentLevel = 1;          
+    public int score = 0;                 
+    public float distance = 0f;           
 
     [Header("References")]
-    public Transform player;              // Reference to player for distance calculation
+    public Transform player;              
 
-    private Vector3 startPosition;        // Player's starting position
-    private bool isHUDVisible = true;     // Track HUD visibility
+    private Vector3 startPosition;        
+    private bool isHUDVisible = true;     
 
     void Awake()
     {
+        Debug.Log($"GameHUD Awake called in scene: {SceneManager.GetActiveScene().name}");
+        
         // Singleton pattern: only keep one GameHUD
         if (Instance != null && Instance != this)
         {
+            Debug.Log($"Destroying duplicate GameHUD in scene: {SceneManager.GetActiveScene().name}");
             Destroy(gameObject);
             return;
         }
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        Debug.Log($"GameHUD Instance created and set to DontDestroyOnLoad in scene: {SceneManager.GetActiveScene().name}");
     }
+
     void Start()
     {
+        Debug.Log($"GameHUD Start called. Instance null? {Instance == null}");
+        InitializeHUD();
+    }
+
+    void InitializeHUD()
+    {
+        // Find player if not assigned
+        if (player == null)
+        {
+            GameObject playerObj = GameObject.FindWithTag("Player");
+            if (playerObj != null)
+            {
+                player = playerObj.transform;
+                Debug.Log("Player found and assigned");
+            }
+            else
+            {
+                Debug.LogWarning("Player not found!");
+            }
+        }
+
         // Store the player's starting position
         if (player != null)
         {
@@ -59,22 +84,35 @@ public class GameHUD : MonoBehaviour
             HideHUD();
         }
     }
+
     void OnEnable()
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
+        Debug.Log("GameHUD subscribed to sceneLoaded event");
     }
 
     void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        Debug.Log("GameHUD unsubscribed from sceneLoaded event");
     }
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        player = GameObject.FindWithTag("Player")?.transform;
-
-        if (player != null)
+        Debug.Log($"OnSceneLoaded called for scene: {scene.name}, GameHUD Instance null? {Instance == null}");
+        
+        // Re-find player in new scene
+        GameObject playerObj = GameObject.FindWithTag("Player");
+        if (playerObj != null)
+        {
+            player = playerObj.transform;
             startPosition = player.position;
+            Debug.Log($"Player found in new scene: {scene.name}");
+        }
+        else
+        {
+            Debug.LogWarning($"Player not found in scene: {scene.name}");
+        }
 
         // Auto-update level number based on scene name
         if (scene.name == "Level1")
@@ -84,7 +122,56 @@ public class GameHUD : MonoBehaviour
         else if (scene.name == "Level3")
             SetLevel(3);
 
+        // Re-find HUD elements in case they're in the new scene
+        RefreshHUDElements();
+
+        // Reset distance for new level (but keep score!)
+        distance = 0f;
+        
         UpdateHUD();
+        
+        Debug.Log($"Scene loaded: {scene.name}, Current Score: {score}, Level: {currentLevel}");
+    }
+
+    void RefreshHUDElements()
+    {
+        Debug.Log("Refreshing HUD elements...");
+        
+        // Try to find HUD elements if they're not assigned or destroyed
+        if (hudPanel == null)
+        {
+            hudPanel = FindUIElement("HUDPanel")?.gameObject;
+            if (hudPanel != null) Debug.Log("HUDPanel found and assigned");
+            else Debug.LogWarning("HUDPanel not found!");
+        }
+
+        if (levelText == null)
+        {
+            levelText = FindUIElement("LevelText") ?? FindUIElement("Level");
+            if (levelText != null) Debug.Log($"Level UI found and assigned: {levelText.name}");
+            else Debug.LogWarning("LevelText/Level not found!");
+        }
+
+        if (scoreText == null)
+        {
+            scoreText = FindUIElement("ScoreText") ?? FindUIElement("Score");
+            if (scoreText != null) Debug.Log($"Score UI found and assigned: {scoreText.name}");
+            else Debug.LogWarning("ScoreText/Score not found!");
+        }
+
+        if (distanceText == null)
+        {
+            distanceText = FindUIElement("DistanceText") ?? FindUIElement("Distance");
+            if (distanceText != null) Debug.Log($"Distance UI found and assigned: {distanceText.name}");
+            else Debug.LogWarning("DistanceText/Distance not found!");
+        }
+    }
+
+    // Helper method to find UI elements by name
+    private TextMeshProUGUI FindUIElement(string name)
+    {
+        GameObject obj = GameObject.Find(name);
+        return obj?.GetComponent<TextMeshProUGUI>();
     }
 
     void Update()
@@ -158,12 +245,14 @@ public class GameHUD : MonoBehaviour
     {
         score += points;
         UpdateHUD();
+        Debug.Log($"Score added: +{points}, Total Score: {score}, Instance null? {Instance == null}");
     }
 
     public void SetLevel(int level)
     {
         currentLevel = level;
         UpdateHUD();
+        Debug.Log($"Level set to: {level}");
     }
 
     public bool IsHUDVisible()
@@ -171,22 +260,38 @@ public class GameHUD : MonoBehaviour
         return isHUDVisible;
     }
 
-    // ✅ New method for loading next level based on current level
+    public void ResetScore()
+    {
+        score = 0;
+        UpdateHUD();
+    }
+
+    public int GetScore()
+    {
+        return score;
+    }
+
     public void LoadNextLevel()
     {
         if (currentLevel == 1)
         {
-            Debug.Log("Loading Level 2...");
+            Debug.Log($"Loading Level 2... Current Score: {score}");
             SceneManager.LoadScene("Level2");
         }
         else if (currentLevel == 2)
         {
-            Debug.Log("Loading Level 3...");
+            Debug.Log($"Loading Level 3... Current Score: {score}");
             SceneManager.LoadScene("Level3");
         }
         else
         {
-            Debug.Log("No further levels configured.");
+            Debug.Log($"Game Complete! Final Score: {score}");
         }
+    }
+
+    // Static method to check if instance exists
+    public static bool HasInstance()
+    {
+        return Instance != null;
     }
 }

@@ -4,457 +4,556 @@ using UnityEngine;
 
 public class CentralizedSpawnManager : MonoBehaviour
 {
-    [Header("Lane Setup")]
-    public Transform[] lanes;              // Your lane transforms (left, center, right)
-    public Transform player;               // Reference to player
-
-    [Header("Obstacle Settings")]
-    public GameObject[] obstaclePrefabs;
-    public float obstacleSpawnDistance = 50f;
-    public float obstacleSpawnInterval = 3f;
+    [Header("Obstacle Prefabs")]
+    [SerializeField] private GameObject[] obstaclePrefabs;
+    
+    [Header("Power-up Prefabs")]
+    [SerializeField] private GameObject[] powerUpPrefabs;
+    
+    [Header("Spawn Points")]
+    [SerializeField] private Transform leftLane;
+    [SerializeField] private Transform rightLane;
+    [SerializeField] private Transform centerLane;
+    
+    [Header("Spawn Settings")]
+    [SerializeField] private float spawnInterval = 3f;
+    [SerializeField] private float spawnDistance = 50f;
+    [SerializeField] private Transform playerReference;
+    [SerializeField] private Transform roadReference;
+    [SerializeField] private float heightOffsetFromRoad = 0f;
+    
+    [Header("Power-up Settings")]
     [Range(0f, 1f)]
-    public float obstacleSpawnProbability = 0.6f;
-
-    [Header("Coin Settings")]
-    public GameObject coinPrefab;
-    public GameObject diamondPrefab;       // Optional: for special coins
-    public float coinSpawnDistance = 30f;
-    public float coinSpawnInterval = 2f;
-    [Range(0f, 1f)]
-    public float diamondSpawnChance = 0.1f; // 10% chance for diamond instead of coin
-
-    [Header("Power-Up Settings")]
-    public GameObject[] powerUpPrefabs;        // Array of different power-up prefabs
-    public float powerUpSpawnDistance = 40f;
-    public float powerUpSpawnInterval = 15f;   // Spawn every 15 seconds
-    [Range(0f, 1f)]
-    public float powerUpSpawnChance = 0.3f;    // 30% chance when interval hits
-
-    [Header("Safety Rules")]
-    public int maxConsecutiveObstacles = 2; // Max obstacles in a row per lane
-    public float obstacleLength = 5f;       // How long an obstacle "blocks" the lane
-    public bool alwaysKeepOneLaneClear = true; // Guarantee at least one lane is always clear
-
-    // Internal tracking
-    private float nextObstacleSpawnTime;
-    private float nextCoinSpawnTime;
-    private float nextPowerUpSpawnTime;
-    private List<GameObject> activeObstacles = new List<GameObject>();
-    private List<GameObject> activeCoins = new List<GameObject>();
-    private List<GameObject> activePowerUps = new List<GameObject>();
-
-    // Lane occupancy tracking
-    private Dictionary<int, List<float>> laneObstaclePositions = new Dictionary<int, List<float>>();
-    private Dictionary<int, int> laneObstacleCount = new Dictionary<int, int>();
-
+    [SerializeField] private float powerUpSpawnChance = 0.2f; // Reduced frequency
+    [SerializeField] private float powerUpHeightOffset = 2f;
+    [SerializeField] private bool powerUpsFloatAboveRoad = true;
+    
+    [Header("Cleanup Settings")]
+    [SerializeField] private float cleanupDistance = 30f;
+    [SerializeField] private float cleanupInterval = 2f;
+    
+    [Header("Spawn Boundaries")]
+    [SerializeField] private float leftBoundary = -3f;
+    [SerializeField] private float rightBoundary = 3f;
+    
+   
+    
+    [Header("Power-up Safe Zone Settings")]
+    [SerializeField] private float safeZoneDistanceFromObstacles = 15f; // Distance before/after obstacles
+    [SerializeField] private float powerUpCooldown = 12f; // Time between power-ups
+    [SerializeField] private float powerUpDelayAfterStart = 20f; // Wait before first power-up
+    [SerializeField] private bool spawnInSafeZonesOnly = true;
+    
+    [Header("Advanced Settings")]
+    [SerializeField] private bool randomizeInterval = false;
+    [SerializeField] private Vector2 intervalRange = new Vector2(2f, 4f);
+    [SerializeField] private bool useRoadReferenceForHeight = false;
+    
+    [Header("Debug")]
+    [SerializeField] private bool showDebugInfo = false;
+    [SerializeField] private bool forceSpawnPowerUps = false;
+    
+    // Private variables
+    private Transform playerTransform;
+    private Coroutine spawnCoroutine;
+    private Coroutine cleanupCoroutine;
+    private List<GameObject> spawnedObstacles = new List<GameObject>();
+    private List<GameObject> spawnedPowerUps = new List<GameObject>();
+    
+    // Power-up timing control
+    private float lastPowerUpSpawnTime = -999f;
+    private float gameStartTime;
+    private Transform[] spawnPoints;
+    
+    // Track obstacle positions for safe zones
+    private List<Vector3> recentObstaclePositions = new List<Vector3>();
+    
+    // Debug counters
+    private int totalPowerUpAttempts = 0;
+    private int successfulPowerUpSpawns = 0;
+    
     void Start()
     {
-        nextObstacleSpawnTime = Time.time + obstacleSpawnInterval;
-        nextCoinSpawnTime = Time.time + coinSpawnInterval;
-        nextPowerUpSpawnTime = Time.time + powerUpSpawnInterval;
-
-        // Initialize lane tracking
-        for (int i = 0; i < lanes.Length; i++)
-        {
-            laneObstaclePositions[i] = new List<float>();
-            laneObstacleCount[i] = 0;
-        }
+        gameStartTime = Time.time;
+        InitializeSpawnManager();
     }
-
-    void Update()
+    
+    void InitializeSpawnManager()
     {
-        if (Time.timeScale > 0)
+        // Find player if not assigned
+        if (playerReference == null)
         {
-            // Handle obstacle spawning
-            if (Time.time >= nextObstacleSpawnTime)
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            if (player != null)
             {
-                if (Random.value <= obstacleSpawnProbability)
-                {
-                    SpawnObstacle();
-                }
-                nextObstacleSpawnTime = Time.time + obstacleSpawnInterval;
+                playerReference = player.transform;
+                if (showDebugInfo) Debug.Log("CentralizedSpawnManager: Player reference found automatically");
             }
-
-            // Handle coin spawning
-            if (Time.time >= nextCoinSpawnTime)
+            else
             {
-                SpawnCoins();
-                nextCoinSpawnTime = Time.time + coinSpawnInterval;
+                Debug.LogError("CentralizedSpawnManager: Player not found! Make sure player has 'Player' tag or assign manually.");
+                return;
             }
-
-            // Handle power-up spawning
-            if (Time.time >= nextPowerUpSpawnTime)
+        }
+        
+        playerTransform = playerReference;
+        
+        // Initialize spawn points array
+        SetupSpawnPoints();
+        
+        // Find road if not assigned
+        if (roadReference == null)
+        {
+            GameObject road = GameObject.FindGameObjectWithTag("Road");
+            if (road == null)
             {
-                if (Random.value <= powerUpSpawnChance)
-                {
-                    SpawnPowerUp();
-                }
-                nextPowerUpSpawnTime = Time.time + powerUpSpawnInterval;
+                road = GameObject.Find("Road");
             }
-
-            // Cleanup old objects
-            CleanupOldObjects();
-            UpdateLaneOccupancy();
+            
+            if (road != null)
+            {
+                roadReference = road.transform;
+                if (showDebugInfo) Debug.Log("CentralizedSpawnManager: Road reference found automatically");
+            }
+            else
+            {
+                Debug.LogWarning("CentralizedSpawnManager: Road reference not found! Using player position for height reference.");
+            }
+        }
+        
+        // Validate prefabs
+        if (obstaclePrefabs == null || obstaclePrefabs.Length == 0)
+        {
+            Debug.LogWarning("CentralizedSpawnManager: No obstacle prefabs assigned!");
+        }
+        
+        if (powerUpPrefabs == null || powerUpPrefabs.Length == 0)
+        {
+            Debug.LogError("CentralizedSpawnManager: No power-up prefabs assigned! Power-ups will not spawn.");
+        }
+        
+        StartSpawning();
+        StartCleanup();
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"CentralizedSpawnManager initialized with {spawnPoints?.Length ?? 0} spawn points");
+            Debug.Log($"Power-up spawn chance: {powerUpSpawnChance * 100f}%, Safe zone distance: {safeZoneDistanceFromObstacles}");
         }
     }
+    
+    void SetupSpawnPoints()
+    {
+        List<Transform> validSpawnPoints = new List<Transform>();
+        
+        if (leftLane != null) validSpawnPoints.Add(leftLane);
+        if (centerLane != null) validSpawnPoints.Add(centerLane);
+        if (rightLane != null) validSpawnPoints.Add(rightLane);
+        
+        spawnPoints = validSpawnPoints.ToArray();
+        
+        if (spawnPoints.Length == 0)
+        {
+            Debug.LogError("CentralizedSpawnManager: No spawn points assigned! Please assign LeftLane, CenterLane, and/or RightLane in the inspector.");
+        }
+        else if (showDebugInfo)
+        {
+            Debug.Log($"Found {spawnPoints.Length} spawn points:");
+            foreach (Transform point in spawnPoints)
+            {
+                Debug.Log($"- {point.name} at position {point.position}");
+            }
+        }
+    }
+    
+    void StartSpawning()
+    {
+        if (spawnCoroutine != null)
+        {
+            StopCoroutine(spawnCoroutine);
+        }
+        
+        spawnCoroutine = StartCoroutine(SpawnItems());
+    }
+    
+    void StartCleanup()
+    {
+        if (cleanupCoroutine != null)
+        {
+            StopCoroutine(cleanupCoroutine);
+        }
+        
+        cleanupCoroutine = StartCoroutine(CleanupItems());
+    }
+    
+    IEnumerator SpawnItems()
+    {
+        while (true)
+        {
+            if (playerTransform == null)
+            {
+                yield return new WaitForSeconds(1f);
+                continue;
+            }
+            
+            // Always try to spawn an obstacle first (if available)
+            if (obstaclePrefabs != null && obstaclePrefabs.Length > 0)
+            {
+                SpawnObstacle();
+            }
+            
+            // Check if we should spawn a power-up (with timing restrictions)
+            if (ShouldSpawnPowerUp())
+            {
+                TrySpawnPowerUp();
+            }
+            
+            // Wait for next spawn cycle
+            float waitTime = randomizeInterval ? 
+                Random.Range(intervalRange.x, intervalRange.y) : 
+                spawnInterval;
+                
+            yield return new WaitForSeconds(waitTime);
+        }
+    }
+    
+    bool ShouldSpawnPowerUp()
+    {
+        // Check basic conditions
+        if (powerUpPrefabs == null || powerUpPrefabs.Length == 0) return false;
+        if (spawnPoints == null || spawnPoints.Length == 0) return false;
+        
+        // Check if enough time has passed since game start
+        if (Time.time - gameStartTime < powerUpDelayAfterStart) return false;
+        
+        // Check cooldown
+        if (Time.time - lastPowerUpSpawnTime < powerUpCooldown) return false;
+        
+        // Check spawn chance
+        float randomValue = Random.value;
+        bool shouldSpawn = randomValue <= powerUpSpawnChance || forceSpawnPowerUps;
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"Power-up spawn check: Random={randomValue:F3}, Chance={powerUpSpawnChance:F3}, Should spawn={shouldSpawn}");
+        }
+        
+        return shouldSpawn;
+    }
+    
     void SpawnObstacle()
     {
-        if (obstaclePrefabs.Length == 0 || lanes.Length == 0)
+        GameObject prefabToSpawn = obstaclePrefabs[Random.Range(0, obstaclePrefabs.Length)];
+        GameObject spawnedObstacle = Instantiate(prefabToSpawn);
+        
+        float originalY = spawnedObstacle.transform.position.y;
+        Vector3 newPosition = CalculateObstacleSpawnPosition();
+        
+        if (useRoadReferenceForHeight)
         {
-            Debug.LogWarning("No obstacle prefabs or lanes assigned!");
-            return;
-        }
-
-        int randomObstacleIndex = Random.Range(0, obstaclePrefabs.Length);
-        GameObject obstacleToSpawn = obstaclePrefabs[randomObstacleIndex];
-
-        // ✅ Check if this is a "global" obstacle like a fence
-        bool isWideObstacle = obstacleToSpawn.name.ToLower().Contains("fence") ||
-                              obstacleToSpawn.name.ToLower().Contains("wide");
-
-        Vector3 spawnPosition;
-
-        if (isWideObstacle)
-        {
-            // ✅ Spawn in the center of the road
-            spawnPosition = new Vector3(0f, 0f, player.position.z + obstacleSpawnDistance);
-
-            // Optional: Adjust Y position if your prefab's pivot is below ground or needs height
-            spawnPosition.y = 4.9f; // or 1.5f if needed based on your fence prefab
-
-            // No lane occupancy update needed — it's global
+            newPosition.y = CalculateSpawnHeight();
         }
         else
         {
-            // ✅ Spawn on safe lane
-
-            List<int> availableLanes = GetAvailableLanesForObstacles();
-
-            if (availableLanes.Count == 0)
+            newPosition.y = originalY + heightOffsetFromRoad;
+        }
+        
+        if (newPosition.z <= playerTransform.position.z)
+        {
+            newPosition.z = playerTransform.position.z + spawnDistance + 20f;
+        }
+        
+        spawnedObstacle.transform.position = newPosition;
+        spawnedObstacles.Add(spawnedObstacle);
+        
+        // Track this obstacle position for safe zone calculations
+        recentObstaclePositions.Add(newPosition);
+        
+        // Clean up old obstacle positions (keep only recent ones)
+        CleanupOldObstaclePositions();
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"Spawned obstacle: {prefabToSpawn.name} at {newPosition}");
+        }
+    }
+    
+    void CleanupOldObstaclePositions()
+    {
+        // Remove obstacle positions that are too far behind the player
+        for (int i = recentObstaclePositions.Count - 1; i >= 0; i--)
+        {
+            float distanceBehindPlayer = playerTransform.position.z - recentObstaclePositions[i].z;
+            if (distanceBehindPlayer > cleanupDistance + safeZoneDistanceFromObstacles)
             {
-                Debug.Log("No available lanes for obstacles - skipping spawn");
+                recentObstaclePositions.RemoveAt(i);
+            }
+        }
+    }
+    
+    void TrySpawnPowerUp()
+    {
+        totalPowerUpAttempts++;
+        
+        if (showDebugInfo)
+        {
+            Debug.Log($"Attempting to spawn power-up (attempt #{totalPowerUpAttempts})");
+        }
+        
+        // Try each spawn point to find a safe location
+        List<Transform> availableSpawnPoints = new List<Transform>(spawnPoints);
+        
+        // Shuffle the spawn points for randomness
+        for (int i = 0; i < availableSpawnPoints.Count; i++)
+        {
+            Transform temp = availableSpawnPoints[i];
+            int randomIndex = Random.Range(i, availableSpawnPoints.Count);
+            availableSpawnPoints[i] = availableSpawnPoints[randomIndex];
+            availableSpawnPoints[randomIndex] = temp;
+        }
+        
+        foreach (Transform spawnPoint in availableSpawnPoints)
+        {
+            Vector3 powerUpPosition = CalculatePowerUpPosition(spawnPoint);
+            
+            if (IsPositionInSafeZone(powerUpPosition))
+            {
+                SpawnPowerUpAt(powerUpPosition, spawnPoint);
+                lastPowerUpSpawnTime = Time.time;
+                successfulPowerUpSpawns++;
+                
+                if (showDebugInfo)
+                {
+                    Debug.Log($"✅ Successfully spawned power-up at {spawnPoint.name}! Total successful spawns: {successfulPowerUpSpawns}");
+                }
                 return;
             }
-
-            int selectedLane = availableLanes[Random.Range(0, availableLanes.Count)];
-
-            spawnPosition = lanes[selectedLane].position;
-            spawnPosition.z = player.position.z + obstacleSpawnDistance;
-
-            // Special case for obstacles like bricks with unusual pivot height
-            if (obstacleToSpawn.name.ToLower().Contains("brick"))
+            else if (showDebugInfo)
             {
-                spawnPosition.y = 2.9f;
+                Debug.Log($"❌ Position not safe for power-up at {spawnPoint.name} - {powerUpPosition}");
             }
-
-            // Track this obstacle for lane safety
-            laneObstaclePositions[selectedLane].Add(spawnPosition.z);
-            laneObstacleCount[selectedLane]++;
         }
-
-        // Instantiate the obstacle
-        GameObject newObstacle = Instantiate(obstacleToSpawn, spawnPosition, Quaternion.identity);
-        activeObstacles.Add(newObstacle);
-
-        Debug.Log($"Spawned {obstacleToSpawn.name} at {spawnPosition}");
-    }
-
-
-    void SpawnCoins()
-    {
-        if (coinPrefab == null || lanes.Length == 0)
-        {
-            Debug.LogWarning("No coin prefab or lanes assigned!");
-            return;
-        }
-
-        List<int> safeLanes = GetSafeLanesForCoins();
-
-        if (safeLanes.Count == 0)
-        {
-            Debug.Log("No safe lanes for coins - skipping spawn");
-            return;
-        }
-
-        // Decide spawn pattern
-        SpawnPattern pattern = DetermineSpawnPattern(safeLanes);
-
-        switch (pattern)
-        {
-            case SpawnPattern.Single:
-                SpawnSingleCoin(safeLanes);
-                break;
-            case SpawnPattern.Multiple:
-                SpawnMultipleCoins(safeLanes);
-                break;
-            case SpawnPattern.Trail:
-                SpawnCoinTrail(safeLanes);
-                break;
-        }
-    }
-
-    void SpawnPowerUp()
-    {
-        if (powerUpPrefabs.Length == 0 || lanes.Length == 0)
-        {
-            Debug.LogWarning("No power-up prefabs or lanes assigned!");
-            return;
-        }
-
-        // Get safe lanes (avoid obstacles)
-        List<int> safeLanes = GetSafeLanesForPowerUps();
         
-        if (safeLanes.Count == 0)
+        if (showDebugInfo)
         {
-            Debug.Log("No safe lanes for power-ups - skipping spawn");
+            Debug.LogWarning($"Failed to find safe position for power-up at any spawn point");
+        }
+    }
+    
+    Vector3 CalculatePowerUpPosition(Transform spawnPoint)
+    {
+        Vector3 currentPlayerPos = playerTransform.position;
+        
+        // Calculate Z position ahead of player
+        float extraDistance = 0f;
+        Rigidbody playerRb = playerTransform.GetComponent<Rigidbody>();
+        if (playerRb != null)
+        {
+            extraDistance = playerRb.linearVelocity.z * 2f;
+        }
+        
+        float spawnZ = currentPlayerPos.z + spawnDistance + extraDistance + Random.Range(5f, 15f);
+        
+        // Use spawn point's X position exactly
+        float spawnX = spawnPoint.position.x;
+        
+        // Calculate Y position
+        float spawnY = CalculateSpawnHeight();
+        if (powerUpsFloatAboveRoad)
+        {
+            spawnY += powerUpHeightOffset;
+        }
+        
+        return new Vector3(spawnX, spawnY, spawnZ);
+    }
+    
+    bool IsPositionInSafeZone(Vector3 position)
+    {
+        if (!spawnInSafeZonesOnly) return true;
+        
+        // Check distance from all recent obstacle positions
+        foreach (Vector3 obstaclePos in recentObstaclePositions)
+        {
+            float distance = Vector3.Distance(position, obstaclePos);
+            if (distance < safeZoneDistanceFromObstacles)
+            {
+                if (showDebugInfo)
+                {
+                    Debug.Log($"Too close to obstacle: distance = {distance:F2}, required = {safeZoneDistanceFromObstacles}");
+                }
+                return false;
+            }
+        }
+        
+        // Check distance from other power-ups
+        foreach (GameObject powerUp in spawnedPowerUps)
+        {
+            if (powerUp != null)
+            {
+                float distance = Vector3.Distance(position, powerUp.transform.position);
+                if (distance < safeZoneDistanceFromObstacles * 0.5f) // Power-ups can be closer to each other
+                {
+                    if (showDebugInfo)
+                    {
+                        Debug.Log($"Too close to power-up {powerUp.name}: distance = {distance:F2}");
+                    }
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    void SpawnPowerUpAt(Vector3 position, Transform spawnPoint)
+    {
+        GameObject prefabToSpawn = powerUpPrefabs[Random.Range(0, powerUpPrefabs.Length)];
+        
+        if (prefabToSpawn == null)
+        {
+            Debug.LogError("Selected power-up prefab is null!");
             return;
         }
-
-        // Select random lane and power-up
-        int selectedLane = safeLanes[Random.Range(0, safeLanes.Count)];
-        int randomPowerUpIndex = Random.Range(0, powerUpPrefabs.Length);
-        GameObject powerUpToSpawn = powerUpPrefabs[randomPowerUpIndex];
-
-        Vector3 spawnPosition = lanes[selectedLane].position;
-        spawnPosition.z = player.position.z + powerUpSpawnDistance;
-        spawnPosition.y += -1.6f; // Slightly elevated for visibility
-
-        GameObject newPowerUp = Instantiate(powerUpToSpawn, spawnPosition, Quaternion.identity);
-        activePowerUps.Add(newPowerUp);
-
-        Debug.Log($"Spawned {powerUpToSpawn.name} in lane {selectedLane}");
-    }
-
-    void SpawnSingleCoin(List<int> safeLanes)
-    {
-        int selectedLane = safeLanes[Random.Range(0, safeLanes.Count)];
-        GameObject coinToSpawn = ShouldSpawnDiamond() ? diamondPrefab : coinPrefab;
-
-        Vector3 spawnPosition = lanes[selectedLane].position;
-        spawnPosition.z = player.position.z + coinSpawnDistance;
-        spawnPosition.y -= 2f; // Decrease Y position by 2
-
-        GameObject newCoin = Instantiate(coinToSpawn, spawnPosition, Quaternion.identity);
-        activeCoins.Add(newCoin);
-    }
-
-    void SpawnMultipleCoins(List<int> safeLanes)
-    {
-        // Spawn coins in multiple safe lanes
-        int coinsToSpawn = Mathf.Min(safeLanes.Count, Random.Range(2, 4));
-
-        for (int i = 0; i < coinsToSpawn; i++)
+        
+        GameObject spawnedPowerUp = Instantiate(prefabToSpawn, position, Quaternion.identity);
+        
+        // Ensure the power-up has the correct script
+        PowerUpPickup pickup = spawnedPowerUp.GetComponent<PowerUpPickup>();
+        if (pickup == null)
         {
-            if (i < safeLanes.Count)
+            Debug.LogWarning($"Power-up {prefabToSpawn.name} doesn't have PowerUpPickup script! Adding one...");
+            pickup = spawnedPowerUp.AddComponent<PowerUpPickup>();
+        }
+        
+        spawnedPowerUps.Add(spawnedPowerUp);
+        
+        Debug.Log($"✨ Spawned power-up: {prefabToSpawn.name} at {spawnPoint.name} - {position}");
+    }
+    
+    Vector3 CalculateObstacleSpawnPosition()
+    {
+        Vector3 currentPlayerPos = playerTransform.position;
+        
+        float extraDistance = 0f;
+        Rigidbody playerRb = playerTransform.GetComponent<Rigidbody>();
+        if (playerRb != null)
+        {
+            extraDistance = playerRb.linearVelocity.z * 2f;
+        }
+        
+        // For obstacles, use the original spawn boundaries (NOT lanes)
+        float spawnX = Random.Range(leftBoundary, rightBoundary);
+        
+        Vector3 spawnPosition = new Vector3(
+            spawnX,
+            0f,
+            currentPlayerPos.z + spawnDistance + extraDistance
+        );
+        
+        return spawnPosition;
+    }
+    
+    float CalculateSpawnHeight()
+    {
+        if (roadReference != null)
+        {
+            return roadReference.position.y + heightOffsetFromRoad;
+        }
+        else
+        {
+            RaycastHit hit;
+            Vector3 rayStart = playerTransform.position + Vector3.up * 10f;
+            
+            if (Physics.Raycast(rayStart, Vector3.down, out hit, 20f))
             {
-                GameObject coinToSpawn = ShouldSpawnDiamond() ? diamondPrefab : coinPrefab;
-
-                Vector3 spawnPosition = lanes[safeLanes[i]].position;
-                spawnPosition.z = player.position.z + coinSpawnDistance;
-                spawnPosition.y -= 2f; // Decrease Y position by 2
-
-                GameObject newCoin = Instantiate(coinToSpawn, spawnPosition, Quaternion.identity);
-                activeCoins.Add(newCoin);
+                return hit.point.y + heightOffsetFromRoad;
             }
+            
+            return playerTransform.position.y + heightOffsetFromRoad;
         }
     }
-
-    void SpawnCoinTrail(List<int> safeLanes)
+    
+    IEnumerator CleanupItems()
     {
-        // Create a trail of coins in one lane
-        int selectedLane = safeLanes[Random.Range(0, safeLanes.Count)];
-        int trailLength = Random.Range(3, 6);
-
-        for (int i = 0; i < trailLength; i++)
+        while (true)
         {
-            Vector3 spawnPosition = lanes[selectedLane].position;
-            spawnPosition.z = player.position.z + coinSpawnDistance + (i * 2f);
-            spawnPosition.y -= 2f; // Decrease Y position by 2
-
-            GameObject newCoin = Instantiate(coinPrefab, spawnPosition, Quaternion.identity);
-            activeCoins.Add(newCoin);
+            yield return new WaitForSeconds(cleanupInterval);
+            
+            if (playerTransform == null) continue;
+            
+            CleanupList(spawnedObstacles, "obstacle");
+            CleanupList(spawnedPowerUps, "power-up");
+            CleanupOldObstaclePositions();
         }
     }
-
-    List<int> GetAvailableLanesForObstacles()
+    
+    void CleanupList(List<GameObject> itemList, string itemType)
     {
-        List<int> availableLanes = new List<int>();
-
-        for (int i = 0; i < lanes.Length; i++)
+        for (int i = itemList.Count - 1; i >= 0; i--)
         {
-            // Check if lane has too many consecutive obstacles
-            if (laneObstacleCount[i] >= maxConsecutiveObstacles)
+            if (itemList[i] == null)
+            {
+                itemList.RemoveAt(i);
                 continue;
-
-            // Check if there's already an obstacle too close
-            float spawnZ = player.position.z + obstacleSpawnDistance;
-            bool tooClose = false;
-
-            foreach (float obstacleZ in laneObstaclePositions[i])
+            }
+            
+            float distanceBehindPlayer = playerTransform.position.z - itemList[i].transform.position.z;
+            
+            if (distanceBehindPlayer > cleanupDistance)
             {
-                if (Mathf.Abs(obstacleZ - spawnZ) < obstacleLength)
+                if (showDebugInfo)
                 {
-                    tooClose = true;
-                    break;
+                    Debug.Log($"Cleaning up {itemType}: {itemList[i].name}");
                 }
-            }
-
-            if (!tooClose)
-            {
-                availableLanes.Add(i);
-            }
-        }
-
-        // Safety check: if keeping one lane clear is enabled
-        if (alwaysKeepOneLaneClear && availableLanes.Count >= lanes.Length)
-        {
-            // Remove one random lane to keep it clear
-            availableLanes.RemoveAt(Random.Range(0, availableLanes.Count));
-        }
-
-        return availableLanes;
-    }
-
-    List<int> GetSafeLanesForCoins()
-    {
-        List<int> safeLanes = new List<int>();
-        float coinSpawnZ = player.position.z + coinSpawnDistance;
-
-        for (int i = 0; i < lanes.Length; i++)
-        {
-            bool isSafe = true;
-
-            // Check if any obstacle would block this coin
-            foreach (float obstacleZ in laneObstaclePositions[i])
-            {
-                if (Mathf.Abs(obstacleZ - coinSpawnZ) < obstacleLength)
-                {
-                    isSafe = false;
-                    break;
-                }
-            }
-
-            if (isSafe)
-            {
-                safeLanes.Add(i);
-            }
-        }
-
-        return safeLanes;
-    }
-
-    List<int> GetSafeLanesForPowerUps()
-    {
-        List<int> safeLanes = new List<int>();
-        float powerUpSpawnZ = player.position.z + powerUpSpawnDistance;
-
-        for (int i = 0; i < lanes.Length; i++)
-        {
-            bool isSafe = true;
-
-            // Check if any obstacle would block this power-up
-            foreach (float obstacleZ in laneObstaclePositions[i])
-            {
-                if (Mathf.Abs(obstacleZ - powerUpSpawnZ) < obstacleLength + 5f) // Extra buffer
-                {
-                    isSafe = false;
-                    break;
-                }
-            }
-
-            if (isSafe)
-            {
-                safeLanes.Add(i);
-            }
-        }
-
-        return safeLanes;
-    }
-
-    SpawnPattern DetermineSpawnPattern(List<int> safeLanes)
-    {
-        if (safeLanes.Count == 1)
-            return SpawnPattern.Single;
-
-        float rand = Random.value;
-
-        if (rand < 0.4f) // 40% chance
-            return SpawnPattern.Single;
-        else if (rand < 0.8f) // 40% chance
-            return SpawnPattern.Multiple;
-        else // 20% chance
-            return SpawnPattern.Trail;
-    }
-
-    bool ShouldSpawnDiamond()
-    {
-        return diamondPrefab != null && Random.value < diamondSpawnChance;
-    }
-
-    void UpdateLaneOccupancy()
-    {
-        float playerZ = player.position.z;
-
-        // Remove obstacles that are behind the player
-        for (int lane = 0; lane < lanes.Length; lane++)
-        {
-            laneObstaclePositions[lane].RemoveAll(z => z < playerZ - 10f);
-            laneObstacleCount[lane] = laneObstaclePositions[lane].Count;
-        }
-    }
-
-    void CleanupOldObjects()
-    {
-        float playerZ = player.position.z;
-
-        // Cleanup obstacles
-        for (int i = activeObstacles.Count - 1; i >= 0; i--)
-        {
-            if (activeObstacles[i] == null)
-            {
-                activeObstacles.RemoveAt(i);
-            }
-            else if (activeObstacles[i].transform.position.z < playerZ - 30f)
-            {
-                Destroy(activeObstacles[i]);
-                activeObstacles.RemoveAt(i);
-            }
-        }
-
-        // Cleanup coins
-        for (int i = activeCoins.Count - 1; i >= 0; i--)
-        {
-            if (activeCoins[i] == null)
-            {
-                activeCoins.RemoveAt(i);
-            }
-            else if (activeCoins[i].transform.position.z < playerZ - 30f)
-            {
-                Destroy(activeCoins[i]);
-                activeCoins.RemoveAt(i);
-            }
-        }
-
-        // Cleanup power-ups
-        for (int i = activePowerUps.Count - 1; i >= 0; i--)
-        {
-            if (activePowerUps[i] == null)
-            {
-                activePowerUps.RemoveAt(i);
-            }
-            else if (activePowerUps[i].transform.position.z < playerZ - 30f)
-            {
-                Destroy(activePowerUps[i]);
-                activePowerUps.RemoveAt(i);
+                
+                Destroy(itemList[i]);
+                itemList.RemoveAt(i);
             }
         }
     }
-
-    // Helper enum for spawn patterns
-    enum SpawnPattern
+    
+    // Public methods for testing
+    [ContextMenu("Force Spawn PowerUp")]
+    public void ForceSpawnPowerUp()
     {
-        Single,
-        Multiple,
-        Trail
+        if (powerUpPrefabs != null && powerUpPrefabs.Length > 0 && spawnPoints != null && spawnPoints.Length > 0)
+        {
+            Transform randomSpawnPoint = spawnPoints[Random.Range(0, spawnPoints.Length)];
+            Vector3 spawnPos = CalculatePowerUpPosition(randomSpawnPoint);
+            SpawnPowerUpAt(spawnPos, randomSpawnPoint);
+        }
+    }
+    
+    [ContextMenu("Print Debug Stats")]
+    public void PrintDebugStats()
+    {
+        Debug.Log($"=== Spawn Manager Debug Stats ===");
+        Debug.Log($"Game time: {Time.time - gameStartTime:F1}s");
+        Debug.Log($"Time since last power-up: {Time.time - lastPowerUpSpawnTime:F1}s");
+        Debug.Log($"Power-up attempts: {totalPowerUpAttempts}");
+        Debug.Log($"Successful spawns: {successfulPowerUpSpawns}");
+        Debug.Log($"Success rate: {(totalPowerUpAttempts > 0 ? successfulPowerUpSpawns / (float)totalPowerUpAttempts * 100f : 0):F1}%");
+        Debug.Log($"Active obstacles: {GetActiveObstacleCount()}");
+        Debug.Log($"Active power-ups: {GetActivePowerUpCount()}");
+        Debug.Log($"Tracked obstacle positions: {recentObstaclePositions.Count}");
+        Debug.Log($"Available spawn points: {spawnPoints?.Length ?? 0}");
+    }
+    
+    public void SetPowerUpSpawnChance(float newChance)
+    {
+        powerUpSpawnChance = Mathf.Clamp01(newChance);
+        Debug.Log($"Power-up spawn chance changed to: {powerUpSpawnChance * 100f}%");
+    }
+    
+    public int GetActiveObstacleCount()
+    {
+        spawnedObstacles.RemoveAll(obstacle => obstacle == null);
+        return spawnedObstacles.Count;
+    }
+    
+    public int GetActivePowerUpCount()
+    {
+        spawnedPowerUps.RemoveAll(powerUp => powerUp == null);
+        return spawnedPowerUps.Count;
     }
 }

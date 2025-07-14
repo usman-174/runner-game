@@ -13,11 +13,14 @@ TagManager:
   - Fence
   - leftboundary
   - rightboundary
+  - stealth
+  - StealthPlayer
+  - Obstacle
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - StealthPlayer
   - Water
   - UI
   - 

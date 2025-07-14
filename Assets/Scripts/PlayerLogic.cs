@@ -17,23 +17,44 @@ public class PlayerLogic : MonoBehaviour
 
     void Start()
     {
+        Debug.Log($"PlayerLogic Start called in scene: {SceneManager.GetActiveScene().name}");
         InitializeComponents();
     }
 
     void InitializeComponents()
     {
-        gameHUD = FindObjectOfType<GameHUD>();
+        Debug.Log($"Initializing PlayerLogic components...");
+        Debug.Log($"GameHUD.Instance null? {GameHUD.Instance == null}");
+        Debug.Log($"GameHUD.HasInstance()? {GameHUD.HasInstance()}");
+        
+        // Use singleton instance instead of FindObjectOfType
+        gameHUD = GameHUD.Instance;
         playerMovement = GetComponent<PlayerMovement>();
 
         // Ensure we have the required components
         if (gameHUD == null)
         {
-            Debug.LogWarning("GameHUD not found! Make sure GameHUD exists in the scene.");
+            Debug.LogError("GameHUD Instance not found! Make sure GameHUD exists and is properly initialized.");
+            
+            // Try to find it as a fallback
+            gameHUD = FindObjectOfType<GameHUD>();
+            if (gameHUD != null)
+            {
+                Debug.Log("Found GameHUD using FindObjectOfType as fallback");
+            }
+        }
+        else
+        {
+            Debug.Log("GameHUD Instance found successfully!");
         }
 
         if (playerMovement == null)
         {
             Debug.LogError("PlayerMovement component not found! Make sure it's attached to the same GameObject.");
+        }
+        else
+        {
+            Debug.Log("PlayerMovement component found!");
         }
     }
 
@@ -65,8 +86,10 @@ public class PlayerLogic : MonoBehaviour
 
     void CollectCoin(Collider coinCollider)
     {
+        Debug.Log($"Coin collection triggered. GameHUD.Instance null? {GameHUD.Instance == null}");
+        
         // Get base score
-        int baseScore = coinScore; // Your existing coinScore value (1)
+        int baseScore = coinScore;
 
         // Apply power-up multiplier
         PowerUpManager powerUpManager = PowerUpManager.Instance;
@@ -74,17 +97,32 @@ public class PlayerLogic : MonoBehaviour
         {
             baseScore *= powerUpManager.GetCoinMultiplier();
 
-            // Show visual feedback if doubler is active
             if (powerUpManager.IsCoinDoublerActive)
             {
                 Debug.Log("💰 DOUBLED COIN! 2x Score!");
             }
         }
 
-        // Add score
-        if (gameHUD != null)
+        // Add score using singleton instance
+        if (GameHUD.Instance != null)
         {
-            gameHUD.AddScore(baseScore);
+            Debug.Log($"Adding score: {baseScore}");
+            GameHUD.Instance.AddScore(baseScore);
+        }
+        else
+        {
+            Debug.LogError("GameHUD Instance is null! Cannot add score.");
+            
+            // Try alternative approach
+            if (gameHUD != null)
+            {
+                Debug.Log("Using cached gameHUD reference instead");
+                gameHUD.AddScore(baseScore);
+            }
+            else
+            {
+                Debug.LogError("Cached gameHUD is also null!");
+            }
         }
 
         // Destroy the coin
@@ -92,12 +130,30 @@ public class PlayerLogic : MonoBehaviour
 
         Debug.Log($"Coin collected! Score: +{baseScore}");
     }
+
     void CollectDiamond(Collider diamondCollider)
     {
-        // Add score
-        if (gameHUD != null)
+        Debug.Log($"Diamond collection triggered. GameHUD.Instance null? {GameHUD.Instance == null}");
+        
+        // Add score using singleton instance
+        if (GameHUD.Instance != null)
         {
-            gameHUD.AddScore(diamondScore);
+            GameHUD.Instance.AddScore(diamondScore);
+        }
+        else
+        {
+            Debug.LogError("GameHUD Instance is null! Cannot add score.");
+            
+            // Try alternative approach
+            if (gameHUD != null)
+            {
+                Debug.Log("Using cached gameHUD reference instead");
+                gameHUD.AddScore(diamondScore);
+            }
+            else
+            {
+                Debug.LogError("Cached gameHUD is also null!");
+            }
         }
 
         // Destroy the diamond
@@ -109,7 +165,6 @@ public class PlayerLogic : MonoBehaviour
             playerMovement.ApplySpeedBoost(speedBoostAmount, speedBoostDuration);
         }
 
-        // Optional: Add sound effect or particle effect here
         Debug.Log($"Diamond collected! Score: +{diamondScore}, Speed boost applied!");
     }
 
@@ -117,22 +172,22 @@ public class PlayerLogic : MonoBehaviour
     {
         Debug.Log("Level Complete! Calling LoadNextLevel from GameHUD...");
 
-        if (gameHUD != null)
+        if (GameHUD.Instance != null)
         {
-            gameHUD.LoadNextLevel();
+            GameHUD.Instance.LoadNextLevel();
         }
         else
         {
-            Debug.LogError("GameHUD is null! Cannot load next level.");
+            Debug.LogError("GameHUD Instance is null! Cannot load next level.");
         }
     }
 
     // Public methods for other scripts to call
     public void AddScore(int points)
     {
-        if (gameHUD != null)
+        if (GameHUD.Instance != null)
         {
-            gameHUD.AddScore(points);
+            GameHUD.Instance.AddScore(points);
         }
     }
 
@@ -141,12 +196,18 @@ public class PlayerLogic : MonoBehaviour
         CompleteLevel();
     }
 
-    // Optional: Method to handle custom power-ups
     public void ApplyCustomPowerUp(float speedBoost, float duration)
     {
         if (playerMovement != null)
         {
             playerMovement.ApplySpeedBoost(speedBoost, duration);
         }
+    }
+
+    // Method to manually reinitialize if needed
+    [ContextMenu("Reinitialize Components")]
+    public void ReinitializeComponents()
+    {
+        InitializeComponents();
     }
 }
